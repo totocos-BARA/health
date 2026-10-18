@@ -219,11 +219,9 @@ function evaluate(k) {
     add(pct('sodium') > 150 || pct('fat') > 150 ? 'danger' : 'warn', '🫀', '이렇게 먹으면 혈관에 좋지 않아요', `${why.join(', ')}로 권장량을 넘었어요. 국물은 남기고 튀김은 줄여 보세요.`);
   }
 
-  // 늦은 밤 · 술
+  // 늦은 밤
   const late = log.foods.filter(f => { const h = new Date(f.t).getHours(); return (h >= 22 || h < 4) && f.kcal >= 100; });
   if (late.length) add('warn', '🌙', '늦은 밤에 먹었어요', '밤늦게 먹은 음식은 지방으로 쌓이기 쉬워요.');
-  const alcohol = log.foods.filter(f => f.cat === 'alcohol').reduce((s, f) => s + f.kcal, 0);
-  if (alcohol >= 300) add('warn', '🍺', '술 칼로리가 높아요', `술로만 ${fmt(alcohol)}kcal를 먹었어요. 안주까지 더해지면 살이 찌기 쉬워요.`);
 
   // 단백질 부족
   if (dayDone && log.foods.length && pct('protein') < 70) add('warn', '🥚', '단백질이 부족해요', '계란·두부·닭가슴살·생선으로 채워 보세요.');
@@ -567,7 +565,7 @@ function webResultHTML(f, i) {
 async function webSearch(q) {
   state.web = { q, loading: true, items: null, error: null };
   renderFood();
-  const fields = 'product_name,product_name_ko,product_name_en,brands,nutriments,serving_quantity,image_front_small_url';
+  const fields = 'product_name,product_name_ko,product_name_en,brands,nutriments,serving_quantity,image_front_small_url,categories_tags';
   const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&fields=${fields}`;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 15000);
@@ -588,6 +586,8 @@ async function webSearch(q) {
 
 function parseOFF(p) {
   const n = p.nutriments || {};
+  // 술은 기록하지 않으므로 인터넷 검색 결과에서도 뺀다.
+  if ((p.categories_tags || []).some(t => t.includes('alcoholic-beverages') && !t.includes('non-alcoholic')) || Number(n.alcohol_100g) > 0.5) return null;
   const name = (p.product_name_ko || p.product_name || p.product_name_en || '').trim();
   let kcal = n['energy-kcal_100g'];
   if (kcal == null && n.energy_100g != null) kcal = n.energy_100g / 4.184;
