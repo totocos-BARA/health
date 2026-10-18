@@ -410,7 +410,7 @@ function renderToday() {
       <h2>🔥 칼로리 <span class="sub">목표 ${fmt(T.kcal)}kcal</span></h2>
       <div class="ring-wrap">
         ${ring(pct, ringColor)}
-          <div class="center"><span>${remain >= 0 ? '남은 칼로리' : '초과'}</span><b style="color:${remain >= 0 ? 'var(--text)' : 'var(--danger)'}">${fmt(Math.abs(remain))}</b><span>${fmt(pct)}% 섭취</span></div>
+          <div class="center"><span>${remain >= 0 ? '남은 칼로리' : '초과'}</span><b style="color:${remain >= 0 ? 'var(--text)' : 'var(--danger)'}">${fmt(Math.abs(remain))}</b><span>${fmt(Math.max(0, pct))}% 섭취</span></div>
         </div>
         <div class="kcal-stats">
           <div class="kstat"><div class="ico" style="background:var(--primary-soft)">🍽️</div><div><div class="lbl">먹은 칼로리</div><div class="val">${fmt(t.kcal)} kcal</div></div></div>
@@ -423,6 +423,7 @@ function renderToday() {
     <div class="quick">
       <button class="q-food" data-go="food"><span>🍱</span>음식 기록</button>
       <button class="q-ex" data-go="exercise"><span>🏃</span>운동 기록</button>
+      <button class="q-steps" data-paste-steps><span>👣</span>${t.steps ? `걸음 수 ${fmt(t.steps)}보 · 다시 붙여넣기` : '건강 앱 걸음 수 붙여넣기'}</button>
     </div>
 
     <div class="card">
@@ -617,6 +618,7 @@ function renderExercise() {
         <label class="field"><span>👣</span><input id="stepsInput" type="number" inputmode="numeric" min="0" step="100" placeholder="예: 8000" value="${t.steps || ''}"></label>
         <button class="btn primary" data-save-steps>저장</button>
       </div>
+      <button class="btn block" style="margin-top:8px" data-paste-steps>📋 복사한 걸음 수 붙여넣기 (단축어)</button>
       <p class="small muted" style="margin:8px 0 0">걸음 수로 넣은 걷기는 운동에 '걷기'로 또 넣지 마세요.</p>
     </div>
     <div class="chips">${EXERCISE_CATEGORIES.map(c => `<button class="chip ${c.id === state.exCat ? 'active' : ''}" data-excat="${c.id}">${c.emoji} ${c.name}</button>`).join('')}</div>
@@ -1031,12 +1033,8 @@ document.addEventListener('click', e => {
     t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === t));
     return renderProfileResult(readProfileForm());
   }
-  if (t.hasAttribute('data-save-steps')) {
-    const v = Math.round(Number($('#stepsInput').value) || 0);
-    if (v < 0 || v > 100000) return toast('걸음 수를 확인해 주세요');
-    dayLog(state.date, true).steps = v;
-    save(); toast(v ? `${fmt(v)}보, ${fmt(stepKcal(v))}kcal 반영했어요` : '걸음 수를 지웠어요'); return render();
-  }
+  if (t.hasAttribute('data-save-steps')) return saveSteps($('#stepsInput').value, state.date);
+  if (t.hasAttribute('data-paste-steps')) return pasteSteps();
   if (t.hasAttribute('data-del-steps')) {
     dayLog(state.date, true).steps = 0;
     save(); toast('삭제했어요'); return render();
@@ -1122,6 +1120,27 @@ function exportData() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
+function saveSteps(raw, k) {
+  const v = Math.round(Number(String(raw).replace(/[^\d.]/g, '')) || 0);
+  if (v < 0 || v > 100000) return toast('걸음 수를 확인해 주세요');
+  dayLog(k, true).steps = v;
+  save();
+  toast(v ? `${fmt(v)}보, ${fmt(stepKcal(v))}kcal 반영했어요` : '걸음 수를 지웠어요');
+  render();
+}
+
+// 아이폰 단축어가 건강 앱의 걸음 수를 클립보드에 복사해 두면 버튼 한 번으로 넣는다
+async function pasteSteps() {
+  try {
+    const text = await navigator.clipboard.readText();
+    const m = String(text).replace(/,/g, '').match(/\d+(\.\d+)?/);
+    if (!m) return toast('복사된 걸음 수가 없어요. 단축어를 먼저 실행해 주세요');
+    saveSteps(m[0], state.date);
+  } catch {
+    toast('붙여넣기를 허용해 주세요');
+  }
+}
+
 function closeFoodCat() {
   if (history.state?.foodCat) return history.back();
   state.foodCat = null;
@@ -1188,4 +1207,14 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 if (!state.profile) state.tab = 'today';
+
+// 주소로 걸음 수 받기: ?steps=8000 (&date=2026-10-18). 단축어·자동화 앱에서 사용
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('steps')) return;
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : todayKey();
+  history.replaceState(null, '', location.pathname);
+  state.date = d;
+  saveSteps(q.get('steps'), d);
+})();
 render();
