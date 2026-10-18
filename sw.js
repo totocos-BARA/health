@@ -1,5 +1,5 @@
 // 앱 파일을 캐시해 오프라인에서도 열리게 한다. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'diet-v1';
+const VERSION = 'diet-v2';
 const ASSETS = [
   './',
   'index.html',

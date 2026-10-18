@@ -464,6 +464,7 @@ function exLogHTML(ex) {
 
 /* ───────── 화면: 음식 ───────── */
 function allFoods() { return [...state.custom, ...FOODS]; }
+function matches(f, nq) { return norm(f.name).includes(nq) || (f.alias && norm(f.alias).includes(nq)); }
 
 function renderFood() {
   const el = $('#view-food');
@@ -472,7 +473,7 @@ function renderFood() {
   let body = '';
   if (q) {
     const nq = norm(q);
-    const local = allFoods().filter(f => norm(f.name).includes(nq)).slice(0, 30);
+    const local = allFoods().filter(f => matches(f, nq)).slice(0, 40);
     const w = state.web;
     body = `
       <div class="result-list">
@@ -1011,7 +1012,7 @@ document.addEventListener('input', e => {
     const q = state.query.trim();
     renderFood();
     // 내장 사전에 없으면 잠시 뒤 인터넷에서 자동으로 찾기
-    if (q.length >= 2 && !allFoods().some(f => norm(f.name).includes(norm(q)))) {
+    if (q.length >= 2 && !allFoods().some(f => matches(f, norm(q)))) {
       webSearch.t = setTimeout(() => { if (state.query.trim() === q && state.web.q !== q) webSearch(q); }, 900);
     }
   }
