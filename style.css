@@ -70,7 +70,7 @@ svg { display: block; }
 /* 상단 바 */
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: center;
   padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
@@ -80,7 +80,18 @@ svg { display: block; }
 .icon-btn:active { background: var(--surface-2); }
 .icon-btn svg, .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn:disabled { opacity: .25; }
-.date-label { font-weight: 700; font-size: 17px; padding: 6px 12px; border-radius: 12px; }
+.date-label { font-weight: 700; font-size: 16px; padding: 4px 10px; border-radius: 12px; min-width: 128px; }
+.date-nav { display: flex; align-items: center; gap: 2px; background: var(--surface); border-radius: 16px; padding: 4px; box-shadow: var(--shadow); }
+.date-nav.plain { background: none; box-shadow: none; }
+.day-btn { display: flex; align-items: center; gap: 1px; height: 40px; padding: 0 8px; border-radius: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.day-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.day-btn:active { background: var(--surface-2); }
+.day-btn:disabled { opacity: .25; }
+.back-bar { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
+.back-btn { display: inline-flex; align-items: center; gap: 4px; padding: 10px 14px 10px 10px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); font-weight: 700; font-size: 15px; }
+.back-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.back-btn:active { transform: scale(.97); }
+.back-bar h2 { margin: 0; font-size: 18px; }
 .date-label small { display: block; font-size: 11px; font-weight: 600; color: var(--primary); }
 
 main { max-width: 640px; margin: 0 auto; padding: 4px 16px 0; }
