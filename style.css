@@ -186,6 +186,7 @@ main { max-width: 640px; margin: 0 auto; padding: 4px 16px 0; }
 .quick button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border-radius: 16px; font-weight: 700; color: #fff; box-shadow: var(--shadow); }
 .quick .q-food { background: linear-gradient(135deg, #22c55e, #15803d); }
 .quick .q-ex { background: linear-gradient(135deg, #fb923c, #ea580c); }
+.quick .q-steps { grid-column: 1 / -1; background: var(--surface); color: var(--text); padding: 12px; font-size: 15px; }
 .quick span { font-size: 20px; }
 
 /* 기록 목록 */
