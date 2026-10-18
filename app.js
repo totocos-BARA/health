@@ -845,7 +845,7 @@ function openFoodSheet(food) {
       <div><h3>${esc(food.name)}</h3><p>${gramMode ? `${food.brand ? esc(food.brand) + ' · ' : ''}100g당 ${fmt(base.kcal)}kcal` : `1인분 ${esc(food.serving)} · ${fmt(base.kcal)}kcal`}</p></div></div>
     <label class="lbl">${gramMode ? '먹은 양 (g)' : '먹은 양 (인분)'}</label>
     <div class="stepper"><button type="button" data-step="-1">−</button>
-      <input id="qty" type="number" inputmode="decimal" step="${gramMode ? 10 : 0.5}" value="${qty}"><span class="unit">${gramMode ? 'g' : '인분'}</span>
+      <input id="qty" type="number" inputmode="decimal" step="${gramMode ? 10 : 0.1}" min="0" value="${qty}"><span class="unit">${gramMode ? 'g' : '인분'}</span>
       <button type="button" data-step="1">+</button></div>
     <div class="qchips">${chips.map(c => `<button type="button" data-q="${c}" class="${c === qty ? 'active' : ''}">${c}${gramMode ? 'g' : '인분'}</button>`).join('')}</div>
     <label class="lbl">언제 먹었나요?</label>
@@ -866,9 +866,12 @@ function openFoodSheet(food) {
         <div><b>${fmt(state.profile ? base.kcal * f / calc(state.profile).target.kcal * 100 : 0)}%</b><span>하루 권장량</span></div>`;
       s.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('active', Number(b.dataset.q) === qty));
     };
-    inp.addEventListener('input', () => { qty = Math.max(0, Number(inp.value) || 0); upd(); });
+    // 인분은 0.1 단위로 맞춘다.
+    const norm = v => Math.max(0, gramMode ? v : r1(v));
+    inp.addEventListener('input', () => { qty = norm(Number(inp.value) || 0); upd(); });
+    inp.addEventListener('change', () => { inp.value = qty; });
     s.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-      const st = gramMode ? 10 : 0.5;
+      const st = gramMode ? 10 : 0.1;
       qty = Math.max(st, r1(qty + st * Number(b.dataset.step)));
       inp.value = qty; upd();
     }));
