@@ -133,12 +133,22 @@ function totals(k) {
   const t = { kcal: 0, carb: 0, protein: 0, fat: 0, sugar: 0, sodium: 0, burn: 0, exMin: 0 };
   for (const f of log.foods) for (const n of NKEYS) t[n] += f[n] || 0;
   for (const e of log.ex) { t.burn += e.kcal; t.exMin += e.min; }
+  t.steps = log.steps || 0;
+  t.stepKcal = stepKcal(t.steps);
+  t.burn += t.stepKcal;
   t.net = t.kcal - t.burn;
   return t;
 }
 
 function currentWeight() {
   return state.profile?.weight || 65;
+}
+
+// 기본 활동량(주로 앉아서 생활)에 이미 들어 있는 2,000보를 넘는 걸음만 더한다.
+// 한 걸음에 체중 1kg당 약 0.0005kcal (70kg 기준 1만 보 ≈ 280kcal)
+const BASE_STEPS = 2000;
+function stepKcal(steps) {
+  return Math.round(Math.max(0, steps - BASE_STEPS) * 0.0005 * currentWeight());
 }
 
 function exKcal(ex, intensity, min) {
@@ -224,7 +234,13 @@ function evaluate(k) {
   else if (c.bmi < 18.5) add('info', '🌱', '조금 더 잘 챙겨 드세요', `BMI ${r1(c.bmi)}로 저체중이에요. 골고루 충분히 드세요.`);
 
   // 응원
-  if (t.burn > 0) add('good', t.burn >= 300 ? '🏆' : '💪', t.burn >= 300 ? '운동 최고예요!' : '운동 잘했어요!', `${fmt(t.exMin)}분 운동으로 ${fmt(t.burn)}kcal를 태웠어요.`);
+  if (t.burn > 0) {
+    const parts = [];
+    if (t.exMin) parts.push(`${fmt(t.exMin)}분 운동`);
+    if (t.steps) parts.push(`${fmt(t.steps)}보 걷기`);
+    add('good', t.burn >= 300 ? '🏆' : '💪', t.burn >= 300 ? '활동 최고예요!' : '잘 움직였어요!', `${parts.join('와 ')}로 ${fmt(t.burn)}kcal를 더 썼어요.`);
+  }
+  if (t.steps >= 10000) add('good', '👣', '만 보 달성!', '꾸준히 걷는 것만으로도 혈관과 혈당에 좋아요.');
   const healthy = log.foods.some(f => f.cat === 'fruit' || f.cat === 'healthy' || f.name.includes('나물') || f.name.includes('샐러드'));
   if (healthy) add('good', '🥦', '건강한 음식을 챙겼어요', '채소·과일·건강식은 혈관과 장에 좋아요.');
   if (log.foods.length && !out.some(m => m.lvl === 'danger' || m.lvl === 'warn')) {
@@ -398,7 +414,7 @@ function renderToday() {
         </div>
         <div class="kcal-stats">
           <div class="kstat"><div class="ico" style="background:var(--primary-soft)">🍽️</div><div><div class="lbl">먹은 칼로리</div><div class="val">${fmt(t.kcal)} kcal</div></div></div>
-          <div class="kstat"><div class="ico" style="background:color-mix(in srgb,var(--burn) 18%,var(--surface))">🔥</div><div><div class="lbl">운동 소모</div><div class="val">−${fmt(t.burn)} kcal</div></div></div>
+          <div class="kstat"><div class="ico" style="background:color-mix(in srgb,var(--burn) 18%,var(--surface))">🔥</div><div><div class="lbl">운동·활동 소모</div><div class="val">−${fmt(t.burn)} kcal</div></div></div>
           <div class="kstat"><div class="ico" style="background:var(--surface-2)">⚖️</div><div><div class="lbl">순 섭취</div><div class="val">${fmt(t.net)} kcal</div></div></div>
         </div>
       </div>
@@ -434,8 +450,8 @@ function renderToday() {
     <div class="section-title">🍱 먹은 음식 <span class="sub">${log.foods.length}개 · ${fmt(t.kcal)}kcal</span></div>
     <div class="card">${foodLogHTML(log.foods)}</div>
 
-    <div class="section-title">🏃 운동 <span class="sub">${fmt(t.exMin)}분 · ${fmt(t.burn)}kcal</span></div>
-    <div class="card">${exLogHTML(log.ex)}</div>
+    <div class="section-title">🏃 운동·활동 <span class="sub">${fmt(t.exMin)}분${t.steps ? ` · ${fmt(t.steps)}보` : ''} · ${fmt(t.burn)}kcal</span></div>
+    <div class="card">${exLogHTML(log)}</div>
   `;
 }
 
@@ -453,9 +469,15 @@ function foodLogHTML(foods) {
   }).join('');
 }
 
-function exLogHTML(ex) {
-  if (!ex.length) return `<div class="empty"><span class="big">👟</span>오늘 운동 기록이 없어요<br><button class="btn" style="margin-top:10px" data-go="exercise">운동 추가</button></div>`;
-  return `<div class="log-list">${ex.map(e => `
+function exLogHTML(log) {
+  const ex = log.ex;
+  const steps = log.steps ? `
+    <div class="log-item"><div class="em">👣</div>
+      <div class="info"><b>걸음 수 ${fmt(log.steps)}보</b><span>일상 활동 · 기본 ${fmt(BASE_STEPS)}보 초과분만 계산</span></div>
+      <div class="kc" style="color:var(--burn)">−${fmt(stepKcal(log.steps))}</div>
+      <button class="del" data-del-steps aria-label="삭제">✕</button></div>` : '';
+  if (!ex.length && !steps) return `<div class="empty"><span class="big">👟</span>오늘 운동 기록이 없어요<br><button class="btn" style="margin-top:10px" data-go="exercise">운동 추가</button></div>`;
+  return `<div class="log-list">${steps}${ex.map(e => `
     <div class="log-item"><div class="em">${esc(e.emoji)}</div>
       <div class="info"><b>${esc(e.name)}</b><span>${INTENSITIES[e.intensity].name} · ${e.min}분 · ${timeText(e.t)}</span></div>
       <div class="kc" style="color:var(--burn)">−${fmt(e.kcal)}</div>
@@ -584,17 +606,26 @@ function renderExercise() {
   el.innerHTML = `
     <div class="card" style="display:flex;align-items:center;gap:14px">
       <div style="font-size:40px">🔥</div>
-      <div style="flex:1"><div class="muted small">${state.date === todayKey() ? '오늘' : dateText(state.date)} 운동으로 태운 칼로리</div>
+      <div style="flex:1"><div class="muted small">${state.date === todayKey() ? '오늘' : dateText(state.date)} 운동·활동으로 쓴 칼로리</div>
         <div style="font-size:26px;font-weight:800;color:var(--burn)">${fmt(t.burn)} kcal</div>
-        <div class="muted small">${fmt(t.exMin)}분 운동 · 체중 ${fmt(currentWeight(), 1)}kg 기준</div></div>
+        <div class="muted small">${fmt(t.exMin)}분 운동${t.steps ? ` · ${fmt(t.steps)}보` : ''} · 체중 ${fmt(currentWeight(), 1)}kg 기준</div></div>
+    </div>
+    <div class="card">
+      <h2>👣 일상 활동 (걸음 수) <span class="sub">${t.steps ? `−${fmt(t.stepKcal)}kcal` : ''}</span></h2>
+      <p class="small muted" style="margin:-4px 0 10px">휴대폰 건강 앱(아이폰 건강, 삼성 헬스 등)에 나온 오늘 걸음 수를 넣으면 출퇴근·장보기처럼 운동이 아닌 움직임도 반영돼요.</p>
+      <div class="search" style="margin:0">
+        <label class="field"><span>👣</span><input id="stepsInput" type="number" inputmode="numeric" min="0" step="100" placeholder="예: 8000" value="${t.steps || ''}"></label>
+        <button class="btn primary" data-save-steps>저장</button>
+      </div>
+      <p class="small muted" style="margin:8px 0 0">걸음 수로 넣은 걷기는 운동에 '걷기'로 또 넣지 마세요.</p>
     </div>
     <div class="chips">${EXERCISE_CATEGORIES.map(c => `<button class="chip ${c.id === state.exCat ? 'active' : ''}" data-excat="${c.id}">${c.emoji} ${c.name}</button>`).join('')}</div>
     <div class="item-grid">${list.map(e => `
       <button class="item-tile" data-ex="${e.id}"><span class="em">${e.emoji}</span><b>${e.name}</b>
         <span>30분 ${fmt(exKcal(e, 0, 30))}~${fmt(exKcal(e, 2, 30))}kcal</span></button>`).join('')}
     </div>
-    <div class="section-title">📋 운동 기록</div>
-    <div class="card">${exLogHTML(log.ex)}</div>`;
+    <div class="section-title">📋 운동·활동 기록</div>
+    <div class="card">${exLogHTML(log)}</div>`;
 }
 
 /* ───────── 화면: 기록 ───────── */
@@ -681,7 +712,7 @@ function renderProfile() {
         <label class="inp full"><span>나이</span><div class="suffix"><input name="age" type="number" inputmode="numeric" min="10" max="100" value="${esc(p.age)}" placeholder="30"><em>세</em></div></label>
         <label class="inp"><span>키</span><div class="suffix"><input name="height" type="number" inputmode="decimal" step="0.1" min="100" max="230" value="${esc(p.height)}" placeholder="165"><em>cm</em></div></label>
         <label class="inp"><span>몸무게</span><div class="suffix"><input name="weight" type="number" inputmode="decimal" step="0.1" min="25" max="250" value="${esc(p.weight)}" placeholder="60"><em>kg</em></div></label>
-        <label class="inp full"><span>평소 활동량 (운동은 따로 기록해요)</span><select name="activity">
+        <label class="inp full"><span>평소 활동량 (운동·걸음 수는 따로 기록해요. 걸음 수를 기록한다면 '주로 앉아서 생활'을 고르세요)</span><select name="activity">
           ${ACTIVITY.map(a => `<option value="${a.id}" ${a.id === p.activity ? 'selected' : ''}>${a.name} · ${a.desc}</option>`).join('')}</select></label>
         <label class="inp full"><span>목표</span><select name="goal">
           ${GOALS.map(g => `<option value="${g.id}" ${g.id === p.goal ? 'selected' : ''}>${g.emoji} ${g.name}${g.delta ? ` (하루 ${g.delta > 0 ? '+' : ''}${g.delta}kcal)` : ''}</option>`).join('')}</select></label>
@@ -999,6 +1030,16 @@ document.addEventListener('click', e => {
   if (d.sex) {
     t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === t));
     return renderProfileResult(readProfileForm());
+  }
+  if (t.hasAttribute('data-save-steps')) {
+    const v = Math.round(Number($('#stepsInput').value) || 0);
+    if (v < 0 || v > 100000) return toast('걸음 수를 확인해 주세요');
+    dayLog(state.date, true).steps = v;
+    save(); toast(v ? `${fmt(v)}보, ${fmt(stepKcal(v))}kcal 반영했어요` : '걸음 수를 지웠어요'); return render();
+  }
+  if (t.hasAttribute('data-del-steps')) {
+    dayLog(state.date, true).steps = 0;
+    save(); toast('삭제했어요'); return render();
   }
   if (t.hasAttribute('data-save-weight')) {
     const v = Number($('#weightInput').value);

@@ -416,4 +416,13 @@ const EXERCISES = [
   { id: 'garden', name: '정원 가꾸기', emoji: '🌱', cat: 'daily', met: [3.0, 3.8, 4.5] },
   { id: 'dog', name: '반려견 산책', emoji: '🐕', cat: 'daily', met: [3.0, 3.5, 4.0] },
   { id: 'kids', name: '아이와 놀기', emoji: '🧒', cat: 'daily', met: [2.5, 3.5, 5.0] },
+  { id: 'commute', name: '출퇴근 걷기', emoji: '🚶‍♂️', cat: 'daily', met: [3.0, 3.5, 4.3] },
+  { id: 'bikecommute', name: '자전거 출퇴근', emoji: '🚲', cat: 'daily', met: [3.5, 5.8, 6.8] },
+  { id: 'standwork', name: '서서 일하기', emoji: '🧍', cat: 'daily', met: [2.0, 2.5, 3.0] },
+  { id: 'carry', name: '짐 나르기', emoji: '📦', cat: 'daily', met: [3.5, 5.0, 6.5] },
+  { id: 'shopping', name: '장보기', emoji: '🛒', cat: 'daily', met: [2.3, 3.0, 3.5] },
+  { id: 'cooking', name: '요리', emoji: '🍳', cat: 'daily', met: [2.0, 2.5, 3.0] },
+  { id: 'cleaning', name: '대청소', emoji: '🧽', cat: 'daily', met: [3.0, 3.5, 4.5] },
+  { id: 'carwash', name: '세차', emoji: '🚗', cat: 'daily', met: [2.5, 3.5, 4.5] },
+  { id: 'babycare', name: '아이 돌보기', emoji: '👶', cat: 'daily', met: [2.0, 3.0, 4.0] },
 ];
