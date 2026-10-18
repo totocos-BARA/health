@@ -38,6 +38,7 @@ const NUTR = [
 ];
 const NKEYS = ['kcal', 'carb', 'protein', 'fat', 'sugar', 'sodium'];
 const KCAL_PER_KG = 7700;
+const COPYRIGHT = `<p class="copyright">© ${new Date().getFullYear()} app by BARA with Claude</p>`;
 
 /* ───────── 상태 ───────── */
 const state = {
@@ -385,7 +386,8 @@ function renderToday() {
         <p>나이·키·몸무게만 입력하면<br>하루 권장 칼로리와 영양소를 계산해 드려요.</p>
         <div class="hero" style="justify-content:center;margin:10px 0">${mascot('good')}</div>
         <button class="btn primary block" data-go="profile">내 정보 입력하기</button>
-      </div>`;
+      </div>
+      ${COPYRIGHT}`;
     return;
   }
   const k = state.date;
@@ -453,6 +455,7 @@ function renderToday() {
 
     <div class="section-title">🏃 운동·활동 <span class="sub">${fmt(t.exMin)}분${t.steps ? ` · ${fmt(t.steps)}보` : ''} · ${fmt(t.burn)}kcal</span></div>
     <div class="card">${exLogHTML(log)}</div>
+    ${COPYRIGHT}
   `;
 }
 
@@ -737,7 +740,8 @@ function renderProfile() {
         <button class="btn danger" data-reset style="grid-column:1/-1">모든 기록 지우기</button>
       </div>
     </div>
-    <p class="small muted" style="text-align:center;margin:4px 8px 20px">칼로리·영양 정보는 보편적인 추정치이며 의학적 진단을 대신하지 않아요.</p>`;
+    <p class="small muted" style="text-align:center;margin:4px 8px 6px">칼로리·영양 정보는 보편적인 추정치이며 의학적 진단을 대신하지 않아요.</p>
+    ${COPYRIGHT}`;
   renderProfileResult(readProfileForm() || p);
 }
 
