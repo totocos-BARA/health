@@ -689,7 +689,8 @@ function renderProfile() {
 
     <div class="card"><h2>📲 홈 화면에 설치하기</h2>
       <p class="small" style="margin:0 0 6px"><b>아이폰</b> · 사파리 아래쪽 공유 버튼 <svg class="share" viewBox="0 0 24 24" style="display:inline;width:15px;height:15px;vertical-align:-2px" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg> → <b>홈 화면에 추가</b></p>
-      <p class="small" style="margin:0"><b>안드로이드</b> · 크롬 오른쪽 위 ⋮ 메뉴 → <b>앱 설치</b> (또는 홈 화면에 추가)</p>
+      <p class="small" style="margin:0 0 6px"><b>안드로이드 (크롬)</b> · 오른쪽 위 ⋮ 메뉴 → <b>앱 설치</b> (또는 <b>홈 화면에 추가</b>) → 설치</p>
+      <p class="small" style="margin:0"><b>안드로이드 (삼성 인터넷)</b> · 아래쪽 ≡ 메뉴 → <b>현재 페이지 추가</b> → <b>홈 화면</b></p>
     </div>
 
     <div class="card"><h2>💾 데이터</h2>
@@ -1096,6 +1097,13 @@ function showInstallBanner(html) {
   $('#installX').onclick = () => { b.hidden = true; store.set('installDismissed', true); };
 }
 
+const isAndroid = /android/i.test(navigator.userAgent);
+const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+if (isAndroid && !isStandalone) {
+  showInstallBanner(isSamsung
+    ? `<b>홈 화면에 추가해 앱처럼 쓰세요</b>아래쪽 ≡ 메뉴 → '현재 페이지 추가' → '홈 화면'`
+    : `<b>앱으로 설치해 쓰세요</b>오른쪽 위 ⋮ 메뉴 → '앱 설치' (또는 '홈 화면에 추가')`);
+}
 if (isIOS && !isStandalone) {
   showInstallBanner(`<b>홈 화면에 추가해 앱처럼 쓰세요</b>아래 공유 버튼 <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg> → '홈 화면에 추가'`);
 }
