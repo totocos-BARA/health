@@ -492,7 +492,10 @@ function renderFood() {
     const cat = FOOD_CATEGORIES.find(c => c.id === state.foodCat);
     const items = allFoods().filter(f => f.cat === state.foodCat);
     body = `
-      <div class="section-title">${cat.emoji} ${cat.name} <span class="sub"><button class="btn" style="padding:6px 12px" data-cat="">전체 카테고리</button></span></div>
+      <div class="back-bar">
+        <button class="back-btn" data-cat-back><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>뒤로</button>
+        <h2>${cat.emoji} ${cat.name}</h2>
+      </div>
       <div class="item-grid">${items.map(f => `
         <button class="item-tile" data-food="${f.id}"><span class="em">${esc(f.emoji)}</span><b>${esc(f.name)}</b><span>${fmt(f.kcal)}kcal · ${esc(f.serving)}</span></button>`).join('')}
       </div>`;
@@ -939,8 +942,9 @@ function openExerciseSheet(ex) {
 function renderTopbar() {
   const showDate = ['today', 'food', 'exercise'].includes(state.tab);
   const isToday = state.date === todayKey();
-  $('#prevDay').style.visibility = showDate ? 'visible' : 'hidden';
-  $('#nextDay').style.visibility = showDate ? 'visible' : 'hidden';
+  $('#prevDay').hidden = !showDate;
+  $('#nextDay').hidden = !showDate;
+  $('#dateNav').classList.toggle('plain', !showDate);
   $('#nextDay').disabled = isToday;
   const titles = { history: '기록과 추세', profile: '내 정보' };
   $('#dateLabel').innerHTML = showDate ? `${isToday ? '<small>오늘</small>' : '<small style="color:var(--muted)">오늘로 돌아가기</small>'}${dateText(state.date)}` : titles[state.tab];
@@ -967,7 +971,14 @@ document.addEventListener('click', e => {
   if (d.tab) return go(d.tab);
   if (d.go) return go(d.go);
   if (d.goto) { state.date = d.goto; return go('today'); }
-  if (d.cat !== undefined) { state.foodCat = d.cat || null; window.scrollTo(0, 0); return renderFood(); }
+  if (t.hasAttribute('data-cat-back')) return closeFoodCat();
+  if (d.cat !== undefined) {
+    state.foodCat = d.cat || null;
+    // 휴대폰의 뒤로가기(제스처·버튼)로도 카테고리 목록으로 돌아오게 한다
+    if (state.foodCat) history.pushState({ foodCat: state.foodCat }, '');
+    window.scrollTo(0, 0);
+    return renderFood();
+  }
   if (d.excat) { state.exCat = d.excat; return renderExercise(); }
   if (d.food) { const f = allFoods().find(x => x.id === d.food); return f && openFoodSheet(f); }
   if (d.recent !== undefined) return openFoodSheet(state.recent[Number(d.recent)]);
@@ -1069,6 +1080,17 @@ function exportData() {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
+
+function closeFoodCat() {
+  if (history.state?.foodCat) return history.back();
+  state.foodCat = null;
+  window.scrollTo(0, 0);
+  renderFood();
+}
+window.addEventListener('popstate', () => {
+  if (!$('#sheet').hidden) closeSheet();
+  if (state.foodCat) { state.foodCat = null; if (state.tab === 'food') renderFood(); }
+});
 
 $('#sheetBackdrop').addEventListener('click', closeSheet);
 $('#prevDay').addEventListener('click', () => { state.date = addDays(state.date, -1); render(); });
