@@ -1427,7 +1427,18 @@ window.addEventListener('beforeinstallprompt', e => {
 });
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // 새 버전이 설치되면 한 번 새로고침해서 바로 보여 준다 (처음 설치 때는 제외)
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then(reg => {
+    // 홈 화면 앱은 다시 열 때 새로 로드되지 않을 수 있어서 화면에 돌아올 때마다 업데이트를 확인한다
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {}));
 }
 
 if (!state.profile) state.tab = 'today';
