@@ -306,8 +306,17 @@ function evaluate(k) {
   }
 
   // 늦은 밤
-  const late = log.foods.filter(f => { const h = new Date(f.t).getHours(); return (h >= 22 || h < 4) && f.kcal >= 100; });
-  if (late.length) add('warn', '🌙', '늦은 밤에 먹었어요', '밤늦게 먹은 음식은 지방으로 쌓이기 쉬워요.');
+  // 먹은 시각으로 판단: 21시 이후 조금 늦음, 22시 이후 늦은 밤, 23시 이후·새벽이거나 늦게 500kcal 넘게 먹으면 너무 늦음
+  const hourOf = f => new Date(f.t).getHours();
+  const late = log.foods.filter(f => { const h = hourOf(f); return (h >= 21 || h < 4) && f.kcal >= 100; }).sort((a, b) => a.t - b.t);
+  if (late.length) {
+    const lateKcal = late.reduce((s, f) => s + f.kcal, 0);
+    const list = late.slice(0, 3).map(f => `${timeText(f.t)} ${f.name}`).join(', ');
+    const hours = late.map(hourOf);
+    if (hours.some(h => h >= 23 || h < 4) || lateKcal >= 500) add('danger', '🌙', '너무 늦게 먹었어요', `${list} (${fmt(lateKcal)}kcal). 자기 직전에 먹으면 지방으로 쌓이고 다음 날 아침 혈당도 높아져요.`);
+    else if (hours.some(h => h >= 22)) add('warn', '🌙', '늦은 밤에 먹었어요', `${list}. 밤늦게 먹은 음식은 지방으로 쌓이기 쉬워요.`);
+    else add('warn', '🕘', '저녁이 조금 늦었어요', `${list}. 잠들기 3시간 전에는 식사를 끝내는 게 좋아요.`);
+  }
 
   // 단백질 부족
   if (dayDone && log.foods.length && pct('protein') < 70) add('warn', '🥚', '단백질이 부족해요', '계란·두부·닭가슴살·생선으로 채워 보세요.');
@@ -622,7 +631,9 @@ function renderFood() {
   let body = '';
   if (q) {
     const nq = norm(q);
-    const local = allFoods().filter(f => matches(f, nq)).slice(0, 40);
+    // 이름이 똑같은 음식, 이름이 검색어로 시작하는 음식을 먼저 보여준다
+    const rank = f => (norm(f.name) === nq ? 0 : norm(f.name).startsWith(nq) ? 1 : norm(f.name).includes(nq) ? 2 : 3);
+    const local = allFoods().filter(f => matches(f, nq)).map((f, i) => [f, rank(f), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, 40);
     const w = state.web;
     body = `
       <div class="result-list">
@@ -975,19 +986,46 @@ function closeSheet() {
 }
 
 function defaultMeal() {
-  const h = new Date().getHours();
+  return mealFromHour(new Date().getHours());
+}
+
+function mealFromHour(h) {
   if (h >= 4 && h < 11) return 'breakfast';
   if (h >= 11 && h < 16) return 'lunch';
   if (h >= 17 && h < 22) return 'dinner';
   return 'snack';
 }
 
-function entryTime() {
+// hhmm("21:30")을 주면 그 시각으로, 없으면 지금 시각으로 기록한다
+function entryTime(hhmm) {
   const now = new Date();
-  if (state.date === todayKey()) return now.getTime();
+  if (!hhmm && state.date === todayKey()) return now.getTime();
   const d = parseKey(state.date);
-  d.setHours(now.getHours(), now.getMinutes());
+  const [h, m] = hhmm ? hhmm.split(':').map(Number) : [now.getHours(), now.getMinutes()];
+  d.setHours(h, m, 0, 0);
   return d.getTime();
+}
+
+// 먹은 시각 입력칸. 시각을 바꾸면 아침·점심·저녁·간식도 맞춰 바뀐다.
+function timeField() {
+  const n = new Date();
+  return `<label class="lbl">몇 시에 먹었나요?</label>
+    <div class="time-row"><input type="time" id="eatTime" value="${pad(n.getHours())}:${pad(n.getMinutes())}">
+      <span class="small muted" id="eatHint"></span></div>`;
+}
+function bindTime(s, onMeal) {
+  const inp = $('#eatTime', s), hint = $('#eatHint', s);
+  const upd = () => {
+    const h = Number((inp.value || '12:00').split(':')[0]);
+    hint.textContent = h >= 22 || h < 4 ? '🌙 늦은 밤이에요' : h >= 21 ? '조금 늦은 시간이에요' : '';
+    const m = mealFromHour(h);
+    s.querySelectorAll('[data-meal]').forEach(b => b.classList.toggle('active', b.dataset.meal === m));
+    onMeal(m);
+  };
+  inp.addEventListener('change', upd);
+  inp.addEventListener('input', upd);
+  upd();
+  return () => inp.value;
 }
 
 function mealSeg(sel) {
@@ -1018,7 +1056,8 @@ function openFoodSheet(food) {
       <input id="qty" type="number" inputmode="decimal" step="${gramMode ? 10 : 0.1}" min="0" value="${qty}"><span class="unit">${gramMode ? 'g' : '인분'}</span>
       <button type="button" data-step="1">+</button></div>
     <div class="qchips">${chips.map(c => `<button type="button" data-q="${c}" class="${c === qty ? 'active' : ''}">${c}${gramMode ? 'g' : '인분'}</button>`).join('')}</div>
-    <label class="lbl">언제 먹었나요?</label>
+    ${timeField()}
+    <label class="lbl">어떤 끼니인가요?</label>
     ${mealSeg(meal)}
     <div class="preview" id="pv"></div>
     <button class="btn primary block" id="addFood">기록하기</button>
@@ -1046,12 +1085,13 @@ function openFoodSheet(food) {
       inp.value = qty; upd();
     }));
     s.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => { qty = Number(b.dataset.q); inp.value = qty; upd(); }));
+    const getTime = bindTime(s, m => { meal = m; });
     bindSeg(s, '[data-meal]', b => { meal = b.dataset.meal; });
     $('#addFood', s).addEventListener('click', () => {
       if (!(qty > 0)) return toast('먹은 양을 입력해 주세요');
       const f = factor();
       const entry = {
-        id: uid(), name: food.name, emoji: food.emoji || '🛒', cat: food.cat || 'etc', meal, t: entryTime(),
+        id: uid(), name: food.name, emoji: food.emoji || '🛒', cat: food.cat || 'etc', meal, t: entryTime(getTime()),
         amount: gramMode ? `${fmt(qty)}g` : `${fmt(qty, 1)}인분`,
       };
       for (const n of NKEYS) entry[n] = r1((base[n] || 0) * f);
@@ -1082,10 +1122,11 @@ function openManualSheet(name = '') {
       <label class="inp"><span>아이콘</span><select name="cat">${FOOD_CATEGORIES.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('')}</select></label>
       <label class="inp"><span>1회 양</span><input name="serving" placeholder="1인분"></label>
       ${fields.map(([k, l, u]) => `<label class="inp"><span>${l}</span><div class="suffix"><input name="${k}" type="number" inputmode="decimal" step="0.1" min="0" ${k === 'kcal' ? 'required' : ''} placeholder="0"><em>${u}</em></div></label>`).join('')}
-      <div class="full"><label class="lbl" style="margin-top:4px">언제 먹었나요?</label>${mealSeg(meal)}</div>
+      <div class="full">${timeField()}<label class="lbl">어떤 끼니인가요?</label>${mealSeg(meal)}</div>
       <label class="full small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="keep" checked> 내 음식으로 저장해서 다음에 검색하기</label>
       <button class="btn primary block full" type="submit">기록하기</button>
     </form>`, s => {
+    const getTime = bindTime(s, m => { meal = m; });
     bindSeg(s, '[data-meal]', b => { meal = b.dataset.meal; });
     $('#manualForm', s).addEventListener('submit', ev => {
       ev.preventDefault();
@@ -1095,7 +1136,7 @@ function openManualSheet(name = '') {
       for (const [k] of fields) food[k] = Number(f[k].value) || 0;
       if (!food.name) return toast('음식 이름을 입력해 주세요');
       if (f.keep.checked) state.custom = [food, ...state.custom.filter(c => c.name !== food.name)];
-      const entry = { ...food, id: uid(), meal, t: entryTime(), amount: food.serving };
+      const entry = { ...food, id: uid(), meal, t: entryTime(getTime()), amount: food.serving };
       dayLog(state.date, true).foods.push(entry);
       remember(food);
       save();
