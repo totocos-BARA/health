@@ -417,6 +417,7 @@ const EXERCISES = [
   { id: 'commute', name: '출퇴근 걷기', emoji: '🚶‍♂️', cat: 'daily', met: [3.0, 3.5, 4.3] },
   { id: 'bikecommute', name: '자전거 출퇴근', emoji: '🚲', cat: 'daily', met: [3.5, 5.8, 6.8] },
   { id: 'standwork', name: '서서 일하기', emoji: '🧍', cat: 'daily', met: [2.0, 2.5, 3.0] },
+  { id: 'packing', name: '포장하기', emoji: '🎁', cat: 'daily', met: [2.5, 3.0, 4.0] },
   { id: 'carry', name: '짐 나르기', emoji: '📦', cat: 'daily', met: [3.5, 5.0, 6.5] },
   { id: 'shopping', name: '장보기', emoji: '🛒', cat: 'daily', met: [2.3, 3.0, 3.5] },
   { id: 'cooking', name: '요리', emoji: '🍳', cat: 'daily', met: [2.0, 2.5, 3.0] },
