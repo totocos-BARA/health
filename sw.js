@@ -1,5 +1,6 @@
 // 앱 파일을 캐시해 오프라인에서도 열리게 한다. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'diet-v16';
+// 설치할 때는 브라우저 HTTP 캐시를 거치지 않고 서버에서 새로 받아 예전 파일이 섞이지 않게 한다.
+const VERSION = 'diet-v17';
 const ASSETS = [
   './',
   'index.html',
@@ -14,7 +15,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
