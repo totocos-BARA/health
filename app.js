@@ -214,7 +214,8 @@ function glucoseCheck(k) {
   if (carbPct > 130) { risk += 12; bad.push('탄수화물을 많이 먹었어요'); }
   else if (carbPct > 110) risk += 6;
 
-  const sweetDrinks = log.foods.filter(f => f.cat === 'drink' && f.sugar >= 10).length;
+  // 시럽 없는 라떼의 당은 우유의 유당이라 단 음료로 치지 않는다
+  const sweetDrinks = log.foods.filter(f => f.cat === 'drink' && f.sugar >= 10 && f.name !== '카페라떼').length;
   if (sweetDrinks) { risk += Math.min(20, sweetDrinks * 10); bad.push('단 음료를 마셨어요'); }
   const sweets = log.foods.filter(f => f.cat !== 'drink' && f.sugar >= 15).length;
   if (sweets) { risk += Math.min(18, sweets * 6); bad.push('단 음식을 먹었어요'); }
