@@ -47,6 +47,7 @@ const state = {
   weights: store.get('weights', {}),
   custom: store.get('custom', []),
   recent: store.get('recent', []),
+  a1c: store.get('a1c', {}),
   date: dateKey(new Date()),
   tab: 'today',
   foodCat: null,
@@ -87,6 +88,7 @@ function save() {
   store.set('weights', state.weights);
   store.set('custom', state.custom);
   store.set('recent', state.recent);
+  store.set('a1c', state.a1c);
 }
 
 function dayLog(k, create) {
@@ -176,6 +178,79 @@ function eatingEpisodes(foods) {
   return n;
 }
 
+/* ───────── 당화혈색소(혈당) 관리 ───────── */
+// 흰쌀·밀가루 위주라 혈당을 빨리 올리기 쉬운 카테고리
+const FAST_CARB_CATS = ['rice', 'noodle', 'bread', 'bunsik', 'fastfood', 'chinese'];
+const VEG_WORDS = ['나물', '샐러드', '채소', '야채', '브로콜리', '양배추', '버섯', '오이', '시금치'];
+
+function latestA1c() {
+  const e = Object.entries(state.a1c).sort((a, b) => a[0].localeCompare(b[0]));
+  return e.length ? { date: e[e.length - 1][0], v: e[e.length - 1][1] } : null;
+}
+
+function a1cInfo(v) {
+  if (v < 5.7) return { name: '정상', lvl: 'good' };
+  if (v < 6.5) return { name: '당뇨 전단계', lvl: 'warn' };
+  return { name: '당뇨 범위', lvl: 'danger' };
+}
+
+// 하루 식단이 혈당(당화혈색소)에 주는 부담을 0~100점으로 매긴다. 높을수록 좋다.
+function glucoseCheck(k) {
+  const c = calc(state.profile);
+  const log = dayLog(k);
+  if (!c || !log.foods.length) return null;
+  const t = totals(k), T = c.target;
+  let risk = 0;
+  const bad = [], good = [];
+  const sugarPct = t.sugar / T.sugar * 100;
+  if (sugarPct > 150) { risk += 30; bad.push('당류를 너무 많이 먹었어요'); }
+  else if (sugarPct > 100) { risk += 20; bad.push('당류가 권장량을 넘었어요'); }
+  else if (sugarPct > 80) risk += 8;
+
+  const carbShare = t.kcal ? t.carb * 4 / t.kcal : 0;
+  if (t.kcal >= 500 && carbShare > 0.65) { risk += 15; bad.push('탄수화물 비중이 너무 높아요'); }
+  else if (t.kcal >= 500 && carbShare > 0.6) risk += 8;
+  const carbPct = t.carb / T.carb * 100;
+  if (carbPct > 130) { risk += 12; bad.push('탄수화물을 많이 먹었어요'); }
+  else if (carbPct > 110) risk += 6;
+
+  const sweetDrinks = log.foods.filter(f => f.cat === 'drink' && f.sugar >= 10).length;
+  if (sweetDrinks) { risk += Math.min(20, sweetDrinks * 10); bad.push('단 음료를 마셨어요'); }
+  const sweets = log.foods.filter(f => f.cat !== 'drink' && f.sugar >= 15).length;
+  if (sweets) { risk += Math.min(18, sweets * 6); bad.push('단 음식을 먹었어요'); }
+  const fastCarbs = log.foods.filter(f => FAST_CARB_CATS.includes(f.cat) && f.carb >= 40).length;
+  if (fastCarbs >= 3) { risk += 10; bad.push('밥·면·빵을 여러 번 먹었어요'); }
+
+  const ep = eatingEpisodes(log.foods);
+  const snacks = log.foods.filter(f => f.meal === 'snack' && f.kcal >= 30).length;
+  if (ep >= 6 || snacks >= 4) { risk += 15; bad.push('너무 자주 먹었어요'); }
+  else if (ep === 5) risk += 6;
+  if (log.foods.some(f => { const h = new Date(f.t).getHours(); return (h >= 22 || h < 4) && f.carb >= 20; })) { risk += 8; bad.push('늦은 밤에 탄수화물을 먹었어요'); }
+
+  if (log.foods.some(f => f.cat === 'healthy' || f.cat === 'side' || VEG_WORDS.some(w => f.name.includes(w)))) { risk -= 8; good.push('채소를 챙겼어요'); }
+  if (t.protein / T.protein >= 0.8) { risk -= 5; good.push('단백질이 충분해요'); }
+  if (t.exMin >= 30 || t.steps >= 7000) { risk -= 10; good.push('충분히 움직였어요'); }
+  else if (t.exMin >= 15 || t.steps >= 5000) { risk -= 5; good.push('몸을 움직였어요'); }
+  if (sugarPct <= 50 && !sweetDrinks) good.push('당류를 잘 줄였어요');
+
+  const score = Math.round(clamp(100 - risk, 0, 100));
+  const lvl = score >= 80 ? 'good' : score >= 65 ? 'info' : score >= 45 ? 'warn' : 'danger';
+  const name = score >= 80 ? '좋아요' : score >= 65 ? '보통' : score >= 45 ? '주의' : '위험';
+  return { score, lvl, name, bad, good };
+}
+
+// 최근 days일 동안의 혈당 관리 점수 평균 (끝나지 않은 오늘은 다른 기록이 있으면 뺀다)
+function glucoseTrend(endKey, days = 14) {
+  let list = Array.from({ length: days }, (_, i) => addDays(endKey, i - days + 1)).map(k => ({ k, g: glucoseCheck(k) })).filter(d => d.g);
+  if (list.length > 1 && endKey === todayKey() && new Date().getHours() < 20) list = list.filter(d => d.k !== endKey);
+  if (!list.length) return null;
+  const avg = list.reduce((s, d) => s + d.g.score, 0) / list.length;
+  const tally = {};
+  for (const d of list) for (const b of d.g.bad) tally[b] = (tally[b] || 0) + 1;
+  const causes = Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+  return { days: list.length, avg, causes };
+}
+
 /* ───────── 경고 · 응원 메시지 ───────── */
 function evaluate(k) {
   const c = calc(state.profile);
@@ -217,6 +292,16 @@ function evaluate(k) {
     if (pct('sodium') > 100) why.push(`나트륨 ${fmt(t.sodium)}mg`);
     if (pct('fat') > 120) why.push(`지방 ${fmt(t.fat)}g`);
     add(pct('sodium') > 150 || pct('fat') > 150 ? 'danger' : 'warn', '🫀', '이렇게 먹으면 혈관에 좋지 않아요', `${why.join(', ')}로 권장량을 넘었어요. 국물은 남기고 튀김은 줄여 보세요.`);
+  }
+
+  // 당화혈색소
+  const g = glucoseCheck(k);
+  const a1c = latestA1c();
+  if (g) {
+    const extra = a1c && a1c.v >= 5.7 ? ` 당화혈색소가 ${a1c.v}%라 더 신경 써 주세요.` : '';
+    if (g.lvl === 'danger') add('danger', '🩸', '이렇게 먹으면 당화혈색소가 올라갈 수 있어요', `${g.bad.slice(0, 3).join(', ')}.${extra} 식후 10분만 걸어도 혈당이 덜 올라가요.`);
+    else if (g.lvl === 'warn') add('warn', '📈', '당화혈색소 관리에 신경 써 주세요', `${g.bad.slice(0, 2).join(', ')}.${extra} 단 음료는 물로, 흰밥은 잡곡으로 바꿔 보세요.`);
+    else if (g.lvl === 'good' && (dayDone || log.foods.length >= 2)) add('good', '💚', '혈당 관리 잘 하고 있어요!', `오늘 식단은 당화혈색소 관리에 좋아요.${g.good.length ? ' ' + g.good.slice(0, 2).join(', ') + '.' : ''}`);
   }
 
   // 늦은 밤
@@ -354,6 +439,36 @@ function riskMeter(monthKg) {
   </svg></div>`;
 }
 
+function a1cGauge(v) {
+  const min = 4, max = 10, W = 300;
+  const x = n => ((clamp(n, min, max) - min) / (max - min)) * W;
+  const segs = [[4, 5.7, '#4ade80', '정상'], [5.7, 6.5, '#facc15', '전단계'], [6.5, 8, '#fb923c', '당뇨'], [8, 10, '#ef4444', '관리 필요']];
+  return `<div class="gauge"><svg viewBox="-6 0 312 62">
+    ${segs.map(([a, b, col, name], i) => `<rect x="${x(a) + (i ? 1 : 0)}" y="22" width="${x(b) - x(a) - (i ? 1 : 0)}" height="12" rx="3" fill="${col}"/>
+      <text x="${(x(a) + x(b)) / 2}" y="50" text-anchor="middle" font-size="10" fill="var(--muted)">${name}</text>`).join('')}
+    ${[5.7, 6.5, 8].map(n => `<text x="${x(n)}" y="60" text-anchor="middle" font-size="8.5" fill="var(--muted)">${n}%</text>`).join('')}
+    ${v == null ? '' : `<g transform="translate(${x(v)},0)"><path d="M-6 8 h12 l-6 9z" fill="var(--text)"/><text y="6" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text)">${v}%</text></g>`}
+  </svg></div>`;
+}
+
+// 최근 14일 혈당 관리 점수 막대
+function glucoseChart(endKey) {
+  const days = Array.from({ length: 14 }, (_, i) => addDays(endKey, i - 13));
+  const W = 340, H = 120, top = 12, bottom = 20, h = H - top - bottom, colW = W / 14;
+  const col = { good: '#22c55e', info: '#60a5fa', warn: '#f59e0b', danger: '#ef4444' };
+  const y = v => top + h - (v / 100) * h;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}">
+    <line x1="0" x2="${W}" y1="${y(80)}" y2="${y(80)}" stroke="var(--good)" stroke-dasharray="4 4"/>
+    <text x="2" y="${y(80) - 3}" font-size="9" style="fill:var(--good)">좋아요 80</text>
+    ${days.map((k, i) => {
+      const g = glucoseCheck(k), cx = colW * i + colW / 2;
+      const lbl = i % 2 === 1 || i === 13 ? `<text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="9" class="${k === endKey ? 'today-lbl' : ''}">${parseKey(k).getDate()}</text>` : '';
+      if (!g) return `<rect x="${cx - 6}" y="${top + h - 3}" width="12" height="3" rx="1.5" fill="var(--line)"/>${lbl}`;
+      return `<rect x="${cx - 7}" y="${y(g.score)}" width="14" height="${Math.max(3, (g.score / 100) * h)}" rx="4" fill="${col[g.lvl]}"/>${lbl}`;
+    }).join('')}
+  </svg></div>`;
+}
+
 function sparkline(points) {
   if (points.length < 2) return '';
   const W = 320, H = 70, p = 8;
@@ -444,6 +559,15 @@ function renderToday() {
           </div></div>`;
       }).join('')}
     </div>
+
+    ${(() => {
+      const g = glucoseCheck(k);
+      if (!g) return '';
+      return `<button class="card glu-card" data-go="history">
+        <div class="glu-head"><span>🩸 혈당 관리 점수</span><span class="badge b-${g.lvl}">${g.name}</span><b>${g.score}<small>점</small></b></div>
+        <div class="bar"><i style="width:${g.score}%;background:var(--${g.lvl === 'info' ? 'info' : g.lvl === 'good' ? 'good' : g.lvl})"></i></div>
+        <p class="small muted">당화혈색소 관리를 위한 식단 점수예요. 자세히 보기 ›</p></button>`;
+    })()}
 
     <div class="section-title">💬 오늘의 건강 체크</div>
     <div class="msgs">${msgs.map(m => `<div class="msg ${m.lvl}"><span class="e">${m.e}</span><div><b>${esc(m.title)}</b>${esc(m.d)}</div></div>`).join('')}</div>
@@ -683,6 +807,8 @@ function renderHistory() {
 
     ${obesity}
 
+    ${a1cCardHTML(end, c)}
+
     <div class="card"><h2>⚖️ 체중 기록 <span class="sub">${wpts.length ? `최근 ${fmt(wpts[wpts.length - 1][1], 1)}kg` : ''}</span></h2>
       ${sparkline(wpts) || '<p class="muted small" style="margin:0 0 10px">체중을 두 번 이상 기록하면 그래프가 그려져요.</p>'}
       <div class="search" style="margin:10px 0 0">
@@ -702,6 +828,49 @@ function renderHistory() {
       }).join('')}
       <p class="small muted" style="margin:10px 0 0">🟢 적정 🟡 부족 🟠 조금 많음 🔴 과다</p>
     </div>`;
+}
+
+function a1cCardHTML(end, c) {
+  const last = latestA1c();
+  const gt = c ? glucoseTrend(end) : null;
+  let msg;
+  if (!gt) msg = { lvl: 'info', e: '🍽️', t: '식단을 기록하면 알려드려요', d: '며칠 동안 먹은 음식을 기록하면 당화혈색소가 오를지 내릴지 식단으로 살펴봐요.' };
+  else if (gt.avg >= 80) msg = { lvl: 'good', e: '🎉', t: '잘 하고 있어요!', d: `최근 ${gt.days}일 혈당 관리 점수가 평균 ${fmt(gt.avg)}점이에요. 이대로면 당화혈색소 관리에 도움이 돼요.` };
+  else if (gt.avg >= 65) msg = { lvl: 'info', e: '🙂', t: '대체로 괜찮아요', d: `최근 ${gt.days}일 평균 ${fmt(gt.avg)}점이에요.${gt.causes.length ? ` ${gt.causes.join(', ')}는 조금 줄여 보세요.` : ''}` };
+  else if (gt.avg >= 45) msg = { lvl: 'warn', e: '📈', t: '이대로면 당화혈색소가 올라갈 수 있어요', d: `최근 ${gt.days}일 평균 ${fmt(gt.avg)}점이에요.${gt.causes.length ? ` 자주 나온 원인: ${gt.causes.join(', ')}.` : ''}` };
+  else msg = { lvl: 'danger', e: '🩸', t: '이렇게 먹으면 당화혈색소가 올라갈 수 있어요', d: `최근 ${gt.days}일 평균 ${fmt(gt.avg)}점이에요.${gt.causes.length ? ` 자주 나온 원인: ${gt.causes.join(', ')}.` : ''} 당뇨 위험이 커질 수 있어요.` };
+
+  let lab = '';
+  if (last) {
+    const info = a1cInfo(last.v);
+    const eag = Math.round(28.7 * last.v - 46.7);
+    const pts = Object.entries(state.a1c).sort((a, b) => a[0].localeCompare(b[0]));
+    let d = info.lvl === 'good' ? '정상 범위예요. 지금 식습관을 유지해요!' : info.lvl === 'warn' ? '당뇨 전단계예요. 식단과 운동으로 충분히 되돌릴 수 있어요.' : '당뇨 범위예요. 꼭 병원에서 상담받고 식단을 관리해 주세요.';
+    if (pts.length >= 2) {
+      const diff = r1(last.v - pts[pts.length - 2][1]);
+      if (diff < 0) d = `지난 검사보다 ${-diff}% 내려갔어요. 잘 하고 있어요! ` + d;
+      else if (diff > 0) d = `지난 검사보다 ${diff}% 올라갔어요. ` + d;
+    }
+    lab = `${a1cGauge(last.v)}
+      <div class="msg ${info.lvl}" style="margin:8px 0"><span class="e">${info.lvl === 'good' ? '😊' : info.lvl === 'warn' ? '⚠️' : '🚨'}</span><div><b>${info.name} · ${shortDate(last.date)} 검사</b>${d}<br><span class="small muted">평균 혈당 약 ${eag}mg/dL에 해당해요.</span></div></div>
+      ${pts.length >= 2 ? sparkline(pts.slice(-8)) : ''}`;
+  } else {
+    lab = `${a1cGauge(null)}<p class="small muted" style="margin:4px 0 8px">건강검진이나 병원에서 받은 당화혈색소 수치를 넣으면 함께 관리해 드려요.</p>`;
+  }
+
+  return `<div class="card"><h2>🩸 당화혈색소 관리 <span class="sub">${last ? `최근 ${last.v}%` : '식단 기반'}</span></h2>
+    ${lab}
+    <div class="search" style="margin:0 0 12px">
+      <label class="field"><span>🩸</span><input id="a1cInput" type="number" inputmode="decimal" step="0.1" placeholder="검사 수치 (%)"></label>
+      <button class="btn primary" data-save-a1c>기록</button>
+    </div>
+    <div class="glu-head" style="margin-bottom:2px"><span>최근 14일 혈당 관리 점수</span></div>
+    ${glucoseChart(end)}
+    <div class="msg ${msg.lvl}" style="margin-top:8px"><span class="e">${msg.e}</span><div><b>${msg.t}</b>${msg.d}</div></div>
+    ${gt && gt.avg < 80 ? `<ul class="tips">
+      <li>🚶 식후 10~15분 걷기</li><li>💧 단 음료 대신 물·무가당 차</li><li>🥗 채소 → 단백질 → 밥 순서로 먹기</li><li>🍚 흰밥·밀가루 대신 잡곡·통곡물</li></ul>` : ''}
+    <p class="small muted" style="margin:10px 0 0">당화혈색소는 최근 2~3개월 평균 혈당을 보여줘요. 정상 5.7% 미만, 당뇨 전단계 5.7~6.4%, 당뇨 6.5% 이상이에요. 점수는 식단 기록으로 추정한 참고용이에요.</p>
+  </div>`;
 }
 
 /* ───────── 화면: 내 정보 ───────── */
@@ -1053,11 +1222,17 @@ document.addEventListener('click', e => {
     if (state.profile) state.profile.weight = r1(v);
     save(); toast(`체중 ${r1(v)}kg 기록했어요`); return renderHistory();
   }
+  if (t.hasAttribute('data-save-a1c')) {
+    const v = r1(Number($('#a1cInput').value));
+    if (!(v >= 3 && v <= 20)) return toast('당화혈색소 수치를 올바르게 입력해 주세요 (예: 5.8)');
+    state.a1c[todayKey()] = v;
+    save(); toast(`당화혈색소 ${v}% 기록했어요`); return renderHistory();
+  }
   if (t.hasAttribute('data-export')) return exportData();
   if (t.hasAttribute('data-reset')) {
     if (confirm('모든 기록과 내 정보를 지울까요? 되돌릴 수 없어요.')) {
-      for (const k of ['profile', 'logs', 'weights', 'custom', 'recent']) localStorage.removeItem(KEY + k);
-      Object.assign(state, { profile: null, logs: {}, weights: {}, custom: [], recent: [] });
+      for (const k of ['profile', 'logs', 'weights', 'custom', 'recent', 'a1c']) localStorage.removeItem(KEY + k);
+      Object.assign(state, { profile: null, logs: {}, weights: {}, custom: [], recent: [], a1c: {} });
       toast('모두 지웠어요'); go('today');
     }
   }
@@ -1110,14 +1285,14 @@ document.addEventListener('change', e => {
     if (!data || typeof data.logs !== 'object') throw new Error('bad');
     Object.assign(state, {
       profile: data.profile || null, logs: data.logs || {}, weights: data.weights || {},
-      custom: data.custom || [], recent: data.recent || [],
+      custom: data.custom || [], recent: data.recent || [], a1c: data.a1c || {},
     });
     save(); toast('백업을 불러왔어요'); render();
   }).catch(() => toast('올바른 백업 파일이 아니에요'));
 });
 
 function exportData() {
-  const data = { app: 'diet-pwa', version: 1, exportedAt: new Date().toISOString(), profile: state.profile, logs: state.logs, weights: state.weights, custom: state.custom, recent: state.recent };
+  const data = { app: 'diet-pwa', version: 1, exportedAt: new Date().toISOString(), profile: state.profile, logs: state.logs, weights: state.weights, custom: state.custom, recent: state.recent, a1c: state.a1c };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
