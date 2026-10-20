@@ -633,7 +633,7 @@ function renderFood() {
     const nq = norm(q);
     // 이름이 똑같은 음식, 이름이 검색어로 시작하는 음식을 먼저 보여준다
     const rank = f => (norm(f.name) === nq ? 0 : (f.alias && f.alias.split(' ').some(a => norm(a) === nq)) ? 0.5 : norm(f.name).startsWith(nq) ? 1 : norm(f.name).includes(nq) ? 2 : 3);
-    const local = allFoods().filter(f => matches(f, nq)).map((f, i) => [f, rank(f), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, 40);
+    const local = allFoods().filter(f => matches(f, nq)).map((f, i) => [f, rank(f), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, 60);
     const w = state.web;
     body = `
       <div class="result-list">
