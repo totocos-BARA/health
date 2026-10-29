@@ -15,7 +15,7 @@ function pickValue(field, digits, unit, pct, kcal) {
   const cut = k => { const r = digits.slice(0, -k).replace(/\.$/, ''); return r && /\d/.test(r) ? Number(r) : null; };
   let cands;
   if (UNIT[field] === 'g') cands = /9$/.test(digits) ? [cut(1), n] : /0$/.test(digits) && !ok(n) ? [cut(1), n] : [n];
-  else cands = /(00|09)$/.test(digits) ? [cut(2), cut(1), n] : /[09]$/.test(digits) ? [cut(1), n] : [n];
+  else cands = /(00|09)$/.test(digits) ? [cut(2), cut(1), n] : /9$/.test(digits) ? [cut(1), n] : [n];
   cands = cands.filter(v => v !== null);
   if (pct != null && DAILY[field]) {
     const best = cands.map(v => [v, Math.abs(v / DAILY[field] * 100 - pct)]).sort((a, b) => a[1] - b[1])[0];
@@ -25,13 +25,50 @@ function pickValue(field, digits, unit, pct, kcal) {
   return cands.find(ok) ?? cands[0];
 }
 
+// 한글을 자모로 풀어서 비교한다. OCR이 '나트름', '탄수회물'처럼 한두 획을 틀려도 알아보기 위해서
+function jamo(s) {
+  let out = '';
+  for (const ch of s) {
+    const c = ch.charCodeAt(0) - 0xac00;
+    if (c < 0 || c > 11171) { out += ch; continue; }
+    out += String.fromCharCode(0x1100 + (c / 588 | 0), 0x1161 + ((c % 588) / 28 | 0)) + (c % 28 ? String.fromCharCode(0x11a7 + c % 28) : '');
+  }
+  return out;
+}
+function editDist(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+  }
+  return d[b.length];
+}
+// 긴 이름부터 본다 ('포화지방'이 '지방'으로 잡히지 않게). 앞 글자가 잘린 이름도 받는다
+const NAMES = [['transfat', '트랜스지방'], ['satfat', '포화지방'], ['chol', '콜레스테롤'], ['fiber', '식이섬유'], ['carb', '탄수화물'],
+  ['sodium', '나트륨'], ['protein', '단백질'], ['kcal', '칼로리'], ['kcal', '에너지'], ['sugar', '당류'], ['fat', '지방'], ['kcal', '열량'],
+  ['transfat', '랜스지방'], ['satfat', '화지방'], ['chol', '레스테롤'], ['carb', '수화물'], ['sodium', '트륨'], ['protein', '백질']].map(([f, n]) => [f, n, jamo(n)]);
+function nameOf(word) {
+  for (const [f, n] of NAMES) if (word.includes(n)) return f;
+  if (word.length > 7) return null;
+  let best = null, bestD = 99;
+  for (const [f, n, j] of NAMES) {
+    if (n.length < 3 && word.length !== n.length) continue; // 두 글자 이름은 단어 전체가 비슷할 때만
+    const lim = n.length <= 2 ? 1 : 2;
+    for (let L = Math.max(2, n.length - 1); L <= n.length + 1; L++) for (let i = 0; i + L <= word.length; i++) {
+      const dd = editDist(jamo(word.slice(i, i + L)), j);
+      if (dd <= lim && dd < bestD) { best = f; bestD = dd; }
+    }
+  }
+  return best;
+}
+
 // OCR 글자에서 영양정보를 찾는다. 못 찾은 항목은 null
 function parseNutrition(raw) {
   // '1 3 0 m g'처럼 한 글자씩 띄어 읽힌 부분을 붙인다
   const joined = String(raw || '').split('\n').map(line => {
     const out = [];
     let run = '';
-    for (const w of line.split(/[ \t\u3000]+/)) {
+    for (const w of line.split(/[ \t　]+/)) {
       if (w.length === 1) { run += w; continue; }
       if (run) { out.push(run); run = ''; }
       out.push(w);
@@ -52,29 +89,45 @@ function parseNutrition(raw) {
     .replace(/(?<=\d)G/g, 'g');
 
   const out = { kcal: null, carb: null, protein: null, fat: null, sugar: null, sodium: null, basis: null, total: null, servings: null, kcalEstimated: false };
-  // 긴 이름을 먼저 둬서 '트랜스지방', '포화지방'이 '지방'으로 잡히지 않게 한다. 앞 글자가 잘려도 찾는다
-  const re = /(트랜스지방|랜스지방|포화지방|화지방|콜레스테롤|레스테롤|나트[륨름룸]|트륨|탄수[화회][물들]|수화물|당류|지방|단[백벡][질칠]|백질|열량)[^\d\n]{0,4}?(\d+(?:\.\d+)?)(kcal|mg|g)?(?:[^\d\n%]{0,12}?(\d{1,3}(?:\.\d)?)\s?%)?/g;
-  const key = { 나트: 'sodium', 트륨: 'sodium', 탄수: 'carb', 수화: 'carb', 당류: 'sugar', 지방: 'fat', 단백: 'protein', 단벡: 'protein', 백질: 'protein', 열량: 'kcal' };
-  const hits = [...t.matchAll(re)];
-  const kcalHit = hits.find(m => m[1] === '열량');
-  let kcal = kcalHit ? Number(kcalHit[2]) : null;
-  if (kcal === null) {
-    // '2,000kcal 기준' 안내문은 빼고 처음 나오는 값
-    const k = [...t.matchAll(/(\d+(?:\.\d+)?)kcal/g)].map(m => Number(m[1])).find(v => v !== 2000);
-    if (k !== undefined) kcal = k;
+  // 칼로리: '2,000kcal 기준' 안내문은 빼고 처음 나오는 kcal 값
+  const kc = [...t.matchAll(/(\d+(?:\.\d+)?)kcal/g)].map(m => Number(m[1])).find(v => v !== 2000);
+  const NUM = /(\d+(?:\.\d+)?)(kcal|mg|g)?(?:[^\d\n%]{0,12}?(\d{1,3}(?:\.\d)?)\s?%)?/;
+  const found = {};   // 항목 → [숫자, 단위, %]
+  const pending = []; // 숫자 없이 이름만 있던 줄 (이름과 숫자가 다른 칸에 따로 읽힌 표)
+  for (const line of t.split('\n')) {
+    if (/기준치에|기준이므로|비율|필요열량|따라다를/.test(line.replace(/\s/g, ''))) continue; // 아래쪽 안내문
+    const words = [...line.matchAll(/[가-힣]+/g)].map(m => ({ f: nameOf(m[0]), at: m.index, end: m.index + m[0].length })).filter(w => w.f);
+    if (words.length) {
+      words.forEach((w, i) => {
+        const seg = line.slice(w.end, i + 1 < words.length ? words[i + 1].at : undefined);
+        const m = seg.match(NUM);
+        // '나트륨 (mg) 350'처럼 단위가 이름 옆에 따로 적힌 표
+        const u = m && !m[2] && (seg.slice(0, m.index).match(/\((kcal|mg|g)\)/) || [])[1];
+        if (m && !/^\s*[가-힣]/.test(seg.slice(0, m.index).replace(/[^가-힣\s]/g, ''))) { if (!(w.f in found)) found[w.f] = [m[1], m[2] || u, m[3]]; }
+        else if (words.length === 1) pending.push(w.f);
+      });
+      continue;
+    }
+    if (/당|내용량|제공량/.test(line)) continue;
+    for (const m of line.matchAll(new RegExp(NUM.source, 'g'))) {
+      // 따로 떨어진 숫자는 단위가 붙어 있을 때만(9로 읽힌 g 포함) 이름과 짝짓는다
+      if (m[2] === 'kcal' || !(m[2] || /9$/.test(m[1]))) continue;
+      const f = pending.shift();
+      if (!f) break;
+      if (!(f in found)) found[f] = [m[1], m[2], m[3]];
+    }
   }
+  let kcal = found.kcal ? Number(found.kcal[0]) : kc ?? null;
   out.kcal = kcal;
-  for (const m of hits) {
-    const k = key[m[1].slice(0, 2)];
-    if (!k || k === 'kcal' || out[k] !== null) continue;
-    out[k] = pickValue(k, m[2], m[3], m[4] != null ? Number(m[4]) : null, kcal);
+  for (const k of ['sodium', 'carb', 'sugar', 'fat', 'protein']) {
+    if (found[k]) out[k] = pickValue(k, found[k][0], found[k][1], found[k][2] != null ? Number(found[k][2]) : null, kcal);
   }
-  // 칼로리를 못 읽었거나 탄단지와 크게 어긋나면 탄단지로 계산한다
+  // 칼로리를 못 읽었거나 탄단지로 계산한 값보다 크게 작으면 탄단지로 계산한다
   if (out.carb !== null && out.protein !== null && out.fat !== null) {
     const calc = Math.round(out.carb * 4 + out.protein * 4 + out.fat * 9);
     if (calc > 0 && (out.kcal === null || out.kcal < calc * 0.4)) { out.kcal = calc; out.kcalEstimated = true; }
   }
-  // 양(g): 단위가 빠졌으면 끝의 9(g)나 09(g)를 떼어 본다. 기준량은 총 내용량보다 클 수 없다
+// 양(g): 단위가 빠졌으면 끝의 9(g)나 09(g)를 떼어 본다. 기준량은 총 내용량보다 클 수 없다
   const amt = (m, max) => {
     if (!m) return null;
     if (m[2]) return { amount: Number(m[1]), unit: m[2].toLowerCase() };
