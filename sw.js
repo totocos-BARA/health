@@ -1,12 +1,13 @@
 // 앱 파일을 캐시해 오프라인에서도 열리게 한다. 파일을 바꾸면 VERSION을 올린다.
 // 설치할 때는 브라우저 HTTP 캐시를 거치지 않고 서버에서 새로 받아 예전 파일이 섞이지 않게 한다.
-const VERSION = 'diet-v20';
+const VERSION = 'diet-v21';
 const ASSETS = [
   './',
   'index.html',
   'style.css',
   'app.js',
   'data.js',
+  'ocr.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
