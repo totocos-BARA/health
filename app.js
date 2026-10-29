@@ -664,6 +664,7 @@ function renderFood() {
     body = `
       ${recent.length ? `<div class="section-title">🕘 최근 먹은 음식</div>
         <div class="chips">${recent.map((f, i) => `<button class="chip" data-recent="${i}">${esc(f.emoji)} ${esc(f.name)}</button>`).join('')}</div>` : ''}
+      <button class="btn block photo-btn" data-photo>📷 영양성분표 사진으로 입력하기</button>
       <div class="section-title">📂 카테고리에서 고르기</div>
       <div class="cat-grid">${FOOD_CATEGORIES.map(c => `
         <button class="cat-tile" data-cat="${c.id}"><span class="em" style="background:${c.color}33">${c.emoji}</span>${c.name}</button>`).join('')}
@@ -1112,11 +1113,16 @@ function remember(food) {
   state.recent = [item, ...state.recent.filter(f => f.name + (f.brand || '') !== key)].slice(0, 12);
 }
 
-function openManualSheet(name = '') {
+function openManualSheet(name = '', withPhoto = false) {
   let meal = defaultMeal();
   const fields = [['kcal', '칼로리', 'kcal'], ['carb', '탄수화물', 'g'], ['protein', '단백질', 'g'], ['fat', '지방', 'g'], ['sugar', '당류', 'g'], ['sodium', '나트륨', 'mg']];
   openSheet(`
     <div class="sheet-head"><div class="em">✏️</div><div><h3>직접 입력</h3><p>포장지의 영양성분표를 보고 입력하세요</p></div></div>
+    <div class="ocr-box">
+      <button class="btn block" type="button" data-ocr-pick>📷 영양성분표 사진으로 채우기</button>
+      <input type="file" accept="image/*" id="ocrFile" hidden>
+      <div id="ocrStatus" class="ocr-status" hidden></div>
+    </div>
     <form id="manualForm" class="form-grid">
       <label class="inp full"><span>음식 이름</span><input name="name" value="${esc(name)}" placeholder="예: 엄마표 잡채" required></label>
       <label class="inp"><span>아이콘</span><select name="cat">${FOOD_CATEGORIES.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('')}</select></label>
@@ -1128,6 +1134,8 @@ function openManualSheet(name = '') {
     </form>`, s => {
     const getTime = bindTime(s, m => { meal = m; });
     bindSeg(s, '[data-meal]', b => { meal = b.dataset.meal; });
+    bindOcr(s, fields);
+    if (withPhoto) $('#ocrFile', s).click();
     $('#manualForm', s).addEventListener('submit', ev => {
       ev.preventDefault();
       const f = ev.target;
@@ -1144,6 +1152,57 @@ function openManualSheet(name = '') {
       toast(`${food.name} 기록했어요`);
       render();
     });
+  });
+}
+
+// 영양성분표 사진을 읽어 직접 입력 칸을 채운다. 잘못 읽을 수 있어서 사용자가 확인하고 기록한다
+function bindOcr(s, fields) {
+  const file = $('#ocrFile', s), status = $('#ocrStatus', s), pick = $('[data-ocr-pick]', s), f = $('#manualForm', s);
+  const show = html => { status.hidden = false; status.innerHTML = html; };
+  pick.addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const img = file.files && file.files[0];
+    file.value = '';
+    if (!img) return;
+    pick.disabled = true;
+    show('<span class="spinner"></span> 사진 준비 중…');
+    try {
+      const r = await readNutritionLabel(img, (msg, p) => show(`<span class="spinner"></span> ${msg}… ${p ? Math.round(p * 100) + '%' : ''}`));
+      if (!s.isConnected) return;
+      if (!r.found) {
+        show('😥 영양성분표를 찾지 못했어요. 표가 화면에 꽉 차고 반듯하게 나오도록 밝은 곳에서 다시 찍어 주세요.');
+        return;
+      }
+      const base = {};
+      for (const [k] of fields) {
+        const lab = f[k].closest('.inp');
+        lab.classList.toggle('filled', r[k] !== null);
+        f[k].value = r[k] ?? '';
+        if (r[k] !== null) base[k] = r[k];
+      }
+      const unit = u => (u === 'ml' ? 'ml' : 'g');
+      f.serving.value = r.basis ? `${r.basis.amount}${unit(r.basis.unit)}` : r.total ? `${r.total.amount}${unit(r.total.unit)}` : '';
+      const missing = fields.filter(([k]) => r[k] === null).map(([, l]) => l);
+      let html = `✅ ${r.found}개 항목을 읽었어요. <b>숫자가 맞는지 꼭 확인</b>해 주세요.`;
+      if (missing.length) html += `<br>못 읽은 항목: ${missing.join(', ')}`;
+      if (r.found <= 3) html += '<br>표가 화면에 꽉 차고 반듯하게 나오게 다시 찍으면 더 많이 읽을 수 있어요.';
+      if (r.kcalEstimated) html += '<br>칼로리는 탄수화물·단백질·지방으로 계산했어요.';
+      // 기준량이 총 내용량보다 작으면(예: 100g당, 총 300g) 전체를 먹었을 때로 바꿀 수 있게 한다
+      const factor = r.basis && r.total && unit(r.basis.unit) === unit(r.total.unit) && r.total.amount > r.basis.amount * 1.05 ? r.total.amount / r.basis.amount : 0;
+      if (factor) html += `<br>${r.basis.amount}${unit(r.basis.unit)} 기준이에요. <button class="btn small-btn" type="button" data-ocr-all>전체 ${r.total.amount}${unit(r.total.unit)} 먹었어요 (×${r1(factor)})</button>`;
+      show(html);
+      const all = $('[data-ocr-all]', status);
+      if (all) all.addEventListener('click', () => {
+        for (const k in base) f[k].value = k === 'sodium' || k === 'kcal' ? Math.round(base[k] * factor) : r1(base[k] * factor);
+        f.serving.value = `${r.total.amount}${unit(r.total.unit)}`;
+        all.replaceWith(Object.assign(document.createElement('b'), { textContent: `전체 ${r.total.amount}${unit(r.total.unit)} 기준으로 바꿨어요` }));
+      });
+      if (!f.name.value) f.name.focus();
+    } catch (e) {
+      show(`⚠️ ${esc(e && e.message && /인터넷/.test(e.message) ? e.message : '사진을 읽지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')}`);
+    } finally {
+      pick.disabled = false;
+    }
   });
 }
 
@@ -1236,6 +1295,7 @@ document.addEventListener('click', e => {
   if (d.web !== undefined) { const f = state.web.items[Number(d.web)]; return f && openFoodSheet({ ...f, emoji: '🛒', cat: 'etc' }); }
   if (t.hasAttribute('data-web-search')) return webSearch(state.query.trim());
   if (t.hasAttribute('data-manual')) return openManualSheet(state.query.trim());
+  if (t.hasAttribute('data-photo')) return openManualSheet('', true);
   if (d.ex) return openExerciseSheet(EXERCISES.find(x => x.id === d.ex));
   if (d.delFood) {
     const log = dayLog(state.date, true);
