@@ -370,4 +370,7 @@ main { max-width: 640px; margin: 0 auto; padding: 4px 16px 0; }
 .ocr-box { margin: 0 0 12px; }
 .ocr-status { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
 .ocr-status .small-btn { margin-top: 6px; padding: 7px 12px; font-size: 13px; background: var(--surface); border: 1.5px solid var(--primary); color: var(--primary); }
+.ocr-raw { margin-top: 6px; color: var(--muted); }
+.ocr-raw summary { cursor: pointer; }
+.ocr-raw pre { white-space: pre-wrap; word-break: break-all; font-family: inherit; font-size: 12px; line-height: 1.5; max-height: 180px; overflow: auto; margin: 6px 0 0; }
 .inp.filled input { background: color-mix(in srgb, var(--primary) 12%, transparent); }

@@ -1169,8 +1169,11 @@ function bindOcr(s, fields) {
     try {
       const r = await readNutritionLabel(img, (msg, p) => show(`<span class="spinner"></span> ${msg}… ${p ? Math.round(p * 100) + '%' : ''}`));
       if (!s.isConnected) return;
+      // 읽은 글자를 그대로 보여 줘서, 못 채운 숫자도 보고 옮겨 적을 수 있게 한다
+      const raw = r.text.replace(/\n{2,}/g, '\n').trim().slice(0, 1500);
+      const rawHTML = raw ? `<details class="ocr-raw"><summary>읽은 글자 보기</summary><pre>${esc(raw)}</pre></details>` : '';
       if (!r.found) {
-        show('😥 영양성분표를 찾지 못했어요. 표가 화면에 꽉 차고 반듯하게 나오도록 밝은 곳에서 다시 찍어 주세요.');
+        show('😥 칼로리나 영양성분 숫자를 찾지 못했어요. 표가 화면에 꽉 차고 반듯하게 나오도록 밝은 곳에서 다시 찍어 주세요.' + rawHTML);
         return;
       }
       const base = {};
@@ -1190,7 +1193,7 @@ function bindOcr(s, fields) {
       // 기준량이 총 내용량보다 작으면(예: 100g당, 총 300g) 전체를 먹었을 때로 바꿀 수 있게 한다
       const factor = r.basis && r.total && unit(r.basis.unit) === unit(r.total.unit) && r.total.amount > r.basis.amount * 1.05 ? r.total.amount / r.basis.amount : 0;
       if (factor) html += `<br>${r.basis.amount}${unit(r.basis.unit)} 기준이에요. <button class="btn small-btn" type="button" data-ocr-all>전체 ${r.total.amount}${unit(r.total.unit)} 먹었어요 (×${r1(factor)})</button>`;
-      show(html);
+      show(html + rawHTML);
       const all = $('[data-ocr-all]', status);
       if (all) all.addEventListener('click', () => {
         for (const k in base) f[k].value = k === 'sodium' || k === 'kcal' ? Math.round(base[k] * factor) : r1(base[k] * factor);
